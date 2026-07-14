@@ -25,10 +25,17 @@ python -m venv .venv
 ```
 
 Storage is SQLite, file-backed by default (`reconciliation.db` in the working
-directory) so data survives restarts. Set `RECONCILIATION_DB` to point
-elsewhere, e.g. an in-memory shared-cache DB for tests
-(`file:test?mode=memory&cache=shared`) — that's how the test suite isolates
-itself from the on-disk file.
+directory), so the canonical and audit tables persist on disk. Set
+`RECONCILIATION_DB` to point elsewhere, e.g. an in-memory shared-cache DB for
+tests (`file:test?mode=memory&cache=shared`) — that's how the test suite
+isolates itself from the on-disk file.
+
+**Single-session caveat:** the `Reconciler` holds its grouping state
+(union-find, per-group members, next-id) **in memory** and does not rehydrate
+it from the DB on startup. So the service is safe for one running process, but
+**restarting against a populated DB is not safe** — the first write after a
+restart can overwrite existing groups. Rehydrating on startup from the audit
+table is future work (see `edge-cases.md` §E).
 
 Example requests once the server is running (`/reconcile` expects
 `{"records": [...]}` — `data/sample.json` is a bare array, so wrap it):
@@ -136,7 +143,7 @@ printed as `member_ids -> name | address | domain | confidence` (member ids
 shown sorted for readability — the raw output emits them in merge order):
 
 ```
-['1', '2', '3'] -> Acme Corporation | 123 Main Street | acme.com | conf 90
+['1', '2', '3'] -> Acme Corporation | 123 Main Street | acme.com | conf 95
 ['4', '5'] -> Globex Incorporated | 500 Park Avenue, Suite 200 | globex.io | conf 99
 ['6'] -> Initech LLC | 1 Tech Plaza | initech.com | conf 100
 ['7'] -> Initech Solutions | 1 Tech Plz | initech.co | conf 100
