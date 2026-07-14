@@ -1,0 +1,11 @@
+[
+  {"id": "1", "name": "Acme Corporation", "address": "123 Main St", "website": "acme.com"},
+  {"id": "2", "name": "Acme Corp.", "address": "123 Main Street", "website": null},
+  {"id": "3", "name": "ACME", "address": null, "website": "acme.com"},
+  {"id": "4", "name": "Globex Inc", "address": "500 Park Ave", "website": "globex.io"},
+  {"id": "5", "name": "Globex Incorporated", "address": "500 Park Avenue, Suite 200", "website": "globex.io"},
+  {"id": "6", "name": "Initech LLC", "address": "1 Tech Plaza", "website": "initech.com"},
+  {"id": "7", "name": "Initech Solutions", "address": "1 Tech Plz", "website": "initech.co"},
+  {"id": "8", "name": "Innotech", "address": "9 Innovation Way", "website": "innotech.com"},
+  {"id": "9", "name": "Globed Systems", "address": "77 River Rd", "website": "globed.com"}
+]
