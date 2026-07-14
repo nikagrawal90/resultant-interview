@@ -157,7 +157,7 @@ The system is a linear pipeline of independently testable stages:
 
 1. **Exact normalized domain** → hash lookup (high precision clinch).
 2. **Exact normalized column** (name / address) → hash lookup.
-3. **Trigram-based BM25**, top-K (configurable) → typo-tolerant fuzzy recall. Trigrams (not word tokens) so *character-level* typos (`Initech`/`Intech`, `inftech`/`infitech`) still surface — word-token BM25 would miss them.
+3. **Trigram-based BM25**, top-K (configurable) → typo-tolerant fuzzy recall. Trigrams (not word tokens) so *character-level* typos (`Initech`/`Intech`, `inftech`/`infitech`) still surface — word-token BM25 would miss them. Implementation note: the query must **OR the query string's trigrams** (a single quoted FTS5 phrase only matches a contiguous substring, which is *not* typo-tolerant), and both the stored candidate keys and the query use the **same deep normalization** as scoring (`normalize_name`/`normalize_address`) — otherwise the exact-match candidate branches silently never fire.
 
 - Candidates from the three methods are **deduped into a set**; each maps to its current group; the new record is scored **per matched group** (= per matched canonical).
 - **Union the new record with every group that has a passing edge.** Matching ≥2 groups **bridges** them into one (new evidence they were always the same); recompute the canonical. Bridging is safe for the same reason as #9 — every edge still clears the strict tiered rule (#7) and the domain veto (#10).
