@@ -51,6 +51,21 @@ curl localhost:8000/groups
 (`POST /records` adds one record incrementally; `GET /groups/{id}` reads a
 single group's canonical.)
 
+**CSV in / CSV out.** Ingest a CSV file and export the reconciled result as a
+three-column CSV:
+
+```bash
+# Ingest a CSV (headers: name, address, website; optional id/# column).
+# Missing values = empty cells. Ids are auto-assigned by row if no id column.
+curl -X POST localhost:8000/reconcile/csv -F "file=@data/sample.csv"
+
+# Export the grouped result — one row per group, columns: name,address,website.
+curl localhost:8000/export.csv -o reconciled.csv
+```
+
+Ingesting `data/sample.csv` (the 9 sample rows) yields the six groups; the
+export collapses them to six rows (Acme 1-3 and Globex 4-5 merged).
+
 ## Pipeline
 
 `Ingest → Normalize → Generate candidates → Score & decide → Union (merge groups) → Recompute canonical`
