@@ -1,6 +1,7 @@
 # app/store.py
 import sqlite3
 from app.models import CanonicalRecord, RawRecord
+from app.normalize import normalize_name, normalize_address
 
 class Store:
     def __init__(self, db_path):
@@ -35,11 +36,13 @@ class Store:
         self.con.execute(
             "INSERT INTO canonical VALUES (?,?,?,?,?,?,?,?)",
             (c.group_id, c.name, c.address, c.domain,
-             _norm(c.name), _norm(c.address), c.confidence, ",".join(c.member_ids)),
+             normalize_name(c.name), normalize_address(c.address),
+             c.confidence, ",".join(c.member_ids)),
         )
+        fts_text = f"{normalize_name(c.name)} {normalize_address(c.address)}".strip()
         self.con.execute(
             "INSERT INTO canonical_fts(text, group_id) VALUES (?,?)",
-            (f"{_norm(c.name)} {_norm(c.address)}".strip(), c.group_id),
+            (fts_text, c.group_id),
         )
         self.con.commit()
 
@@ -63,6 +66,7 @@ class Store:
         self.con.commit()
 
     def candidate_group_ids(self, name, address, domain, top_k):
+        # name/address/domain must already be normalized (as produced by app.normalize).
         ids = set()
         if domain:
             ids |= {r["group_id"] for r in self.con.execute(
@@ -73,16 +77,18 @@ class Store:
         if address:
             ids |= {r["group_id"] for r in self.con.execute(
                 "SELECT group_id FROM canonical WHERE norm_address=?", (address,))}
-        query = f"{name} {address}".strip()
-        if query:
-            escaped = '"' + query.replace('"', '""') + '"'
+        text = f"{name} {address}".strip()
+        tris = _trigrams(text)
+        if tris:
+            match = " OR ".join('"' + t.replace('"', '""') + '"' for t in tris)
             ids |= {r["group_id"] for r in self.con.execute(
                 "SELECT group_id FROM canonical_fts WHERE canonical_fts MATCH ? "
-                "ORDER BY bm25(canonical_fts) LIMIT ?", (escaped, top_k))}
+                "ORDER BY bm25(canonical_fts) LIMIT ?", (match, top_k))}
         return ids
 
-def _norm(s):
-    return (s or "").lower().strip()
+def _trigrams(s):
+    s = s.strip()
+    return {s[i:i+3] for i in range(len(s) - 2)}
 
 def _row_to_canonical(r):
     return CanonicalRecord(
