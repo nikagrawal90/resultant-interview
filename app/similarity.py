@@ -1,7 +1,7 @@
 # app/similarity.py
 from rapidfuzz import fuzz
 from rapidfuzz.distance import Levenshtein
-from app.config import DOMAIN_VARIANT_SCORE, TYPO_MAX_EDITS
+from app.config import TYPO_MAX_EDITS
 
 def name_sim(a, b):
     if not a or not b:
@@ -24,8 +24,8 @@ def compare_domain(a, b):
         return "missing"
     if a == b:
         return "exact"
-    name_a, tld_a = _split_domain(a)
-    name_b, tld_b = _split_domain(b)
+    name_a, _ = _split_domain(a)
+    name_b, _ = _split_domain(b)
     if name_a == name_b:
         return "variant"                     # same name, different TLD -> likely one company
     if Levenshtein.distance(name_a, name_b) <= TYPO_MAX_EDITS:

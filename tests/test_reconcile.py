@@ -18,6 +18,9 @@ def test_sample_groups():
     assert ["4", "5"] in groups
     assert ["6"] in groups and ["7"] in groups    # Initech pair left separate (review band)
     assert ["8"] in groups and ["9"] in groups
+    assert all(c.confidence > 0 for c in canon)     # weakest-edge confidence, never 0
+    by_members = {tuple(sorted(c.member_ids, key=int)): c.confidence for c in canon}
+    assert by_members[("1", "2", "3")] == 95        # pinned to actual weakest-edge value
 
 
 def test_new_record_bridges_two_groups():
@@ -36,3 +39,4 @@ def test_new_record_bridges_two_groups():
     canon = store.all_canonicals()
     assert len(canon) == 1
     assert set(canon[0].member_ids) == {"A", "B", "C"}
+    assert canon[0].confidence > 0   # weakest-edge confidence, not min-of-all-pairs (was 0)
