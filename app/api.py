@@ -93,8 +93,11 @@ def create_app(db_uri: str) -> FastAPI:
     @app.post("/reconcile/csv")
     async def reconcile_csv(file: UploadFile):
         raw_bytes = await file.read()
-        text = raw_bytes.decode("utf-8")
-        records = _parse_csv_records(text)
+        try:
+            text = raw_bytes.decode("utf-8")
+            records = _parse_csv_records(text)
+        except (UnicodeDecodeError, csv.Error):
+            raise HTTPException(400, "invalid or unparseable CSV")
         recon.reconcile_batch(records)
         return store.all_canonicals()
 

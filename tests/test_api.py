@@ -39,6 +39,12 @@ def test_reconcile_csv_ingest_produces_six_groups():
     assert {"1", "2", "3"} in member_sets
     assert {"4", "5"} in member_sets
 
+def test_reconcile_csv_bad_encoding_returns_400():
+    client = _fresh_client()
+    bad = b"\xff\xfe\x00n\x00a\x00m\x00e"
+    r = client.post("/reconcile/csv", files={"file": ("bad.csv", bad, "text/csv")})
+    assert r.status_code == 400
+
 def test_export_csv_round_trip():
     client = _fresh_client()
     with open("data/sample.csv", "rb") as f:

@@ -66,7 +66,7 @@ class Store:
 
     def all_canonicals(self):
         with self._lock:
-            return [_row_to_canonical(r) for r in self.con.execute("SELECT * FROM canonical")]
+            return [_row_to_canonical(r) for r in self.con.execute("SELECT * FROM canonical ORDER BY group_id")]
 
     def add_audit(self, group_id, raw):
         with self._lock:
