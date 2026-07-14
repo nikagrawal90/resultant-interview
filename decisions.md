@@ -127,7 +127,7 @@ Starting values, tuned to "a false merge costs more than a false split." All are
 | 2 | 0.90 |
 | 1 | must be **exact**: domain exact → merge; name/address exact → **review** (they collide) |
 
-- **Review band:** score within **0.05** below its threshold. Because the pipeline has **no human review queue** (#12), a borderline pair is **left unmerged (the conservative default) and logged** with its score and reason — the log is what we use to tune thresholds offline. The band therefore does not change output, only observability.
+- **Review band:** score within **0.05** below its threshold. Because the pipeline has **no human review queue** (#12), a borderline pair is **left unmerged** (the conservative default). The intent is to surface its score and reason for offline threshold tuning; today that distinction lives only in the returned `PairDecision` (`decision`/`reason`) and is **not yet persisted or logged** in the running pipeline (future work — see `edge-cases.md` §E). The band does not change merge output, only observability.
 
 **Confidence:** pairwise = `score × 100`, capped by evidence (3 fields → 99, 2 → 95, 1 → 90). **Group confidence = the weakest edge** that formed the group.
 
@@ -143,7 +143,7 @@ The system is a linear pipeline of independently testable stages:
 
 **Ingest → Normalize → Generate candidates → Score & decide → Merge → continue.**
 
-- No **review queue**: `Score & decide` makes a binary call (merge / don't). Borderline pairs are left unmerged and logged (see #11), not held for a human.
+- No **review queue**: `Score & decide` makes a binary call (merge / don't). Borderline pairs are left unmerged (their `review` label is available in the `PairDecision` but not persisted — see #11), not held for a human.
 - **Incremental by design:** each new record is processed against the existing set and unioned into an existing group (or forms a new one), without re-running the whole batch. Batch mode is the same mechanism applied record-by-record over a snapshot (or index-then-query).
 
 **Group-as-single-entity model:**
