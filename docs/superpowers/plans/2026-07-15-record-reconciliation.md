@@ -987,6 +987,10 @@ git commit -m "feat: incremental reconciler with candidate gen, bridging, group 
 
 ```python
 # tests/test_api.py
+import os
+# Point the app at an isolated in-memory DB BEFORE importing it, so the test
+# never touches the on-disk reconciliation.db (avoids cross-run state).
+os.environ["RECONCILIATION_DB"] = "file:apitest?mode=memory&cache=shared"
 from fastapi.testclient import TestClient
 from app.api import app
 
@@ -1011,6 +1015,7 @@ Expected: FAIL with `ModuleNotFoundError: No module named 'app.api'`
 
 ```python
 # app/api.py
+import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -1019,7 +1024,8 @@ from app.reconcile import Reconciler
 from app.models import RawRecord
 
 app = FastAPI(title="Record Reconciliation")
-_store = Store("file:reconciliation.db")     # file-backed; durable across restarts
+# File-backed and durable by default; override with RECONCILIATION_DB (tests use an in-memory DB).
+_store = Store(os.environ.get("RECONCILIATION_DB", "file:reconciliation.db"))
 _store.init_schema()
 _recon = Reconciler(_store)
 
