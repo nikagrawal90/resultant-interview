@@ -45,18 +45,21 @@ So `https://www.acme.com/about`, `ACME.COM`, and `www.acme.com/` all compare as 
 
 **Why this matters (the coupling):** our strictest merge rule (decision #7) lets a single field, if it matches *exactly*, carry a merge. "Exact" only means "exact after normalization," so the aggressiveness of normalization directly decides whether that rule is safe. Aggressive normalization would collapse different companies to the same canonical string — e.g. stripping `LLC` and `Solutions` makes `Initech LLC` and `Initech Solutions` both become `initech`, an "exact" match that would merge two possibly-different companies on a lone name. Restricting normalization to formatting noise keeps "exact = merge" honest.
 
-### 4. Domain comparison has three states, not two
+### 4. Domain comparison has four states (revised)
 
 A domain difference is ambiguous because a small difference has two opposite explanations that edit distance alone cannot tell apart:
 
 - `infitech.com` vs `inftech.com` → a **typo** of one real domain → same company.
 - `globex.io` vs `globed.com` → similar-but-real names → different companies.
 
-Since the character difference points in no reliable direction, we resolve it by treating domain as three distinct states:
+**Both of these are exactly 1 edit apart in the registrable name.** No edit-distance threshold can label one "same" and the other "different" — so we do **not** try. A 1-edit difference is its own *ambiguous* state that stays neutral and defers to name+address, which is where the two cases actually diverge (globex/globed disagree on name+address; a real typo pair agrees). We compare domains **structurally** (registrable name + TLD) and classify into four states:
 
-- **Exact match** → strong "same company" signal (near-clincher).
-- **Fuzzy/near match (not exact)** → **ambiguous**: little to no weight on its own; let name + address decide. This respects the cost asymmetry — we won't merge on a fuzzy domain alone, because we can't distinguish a typo from two real companies.
-- **Exact but different** (two clean, unequal domains, e.g. `acme.com` vs `globex.com`) → **negative evidence** / veto candidate for an otherwise-similar pair.
+- **exact** (`a == b`) → strong "same company" signal (near-clincher) → scores 1.0.
+- **variant** — same registrable name, different TLD (`initech.com` / `initech.co`) → likely one company owning multiple TLDs → mild positive, scores 0.8, does **not** veto.
+- **near** — registrable names differ by a **single edit** (`globex`/`globed`, `infitech`/`inftech`) → **ambiguous**: excluded from the score (neither rewarded nor penalized) and does **not** veto. Name+address decide. This is the honest reading of "we can't tell a typo from a different company."
+- **different** — registrable names differ by **more than one edit** (or clearly unrelated) → excluded from the score and is a **veto** candidate (see #10).
+
+This resolves both hard cases correctly in the full pipeline without the classifier having to guess: `globex`/`globed` (`near`) never merge because name+address disagree; a genuine typo pair (`near`) merges because name+address agree; neither is wrongly credited (0.8) nor wrongly vetoed.
 
 **Bonus use of fuzzy domains:** fuzzy domain similarity is valuable for **candidate generation** (finding pairs to compare, so a typo'd domain doesn't hide a true match) even though it is *not* trusted in the final merge decision. Recall tool vs. precision tool. (Deferred to the scaling/architecture stage.)
 
@@ -98,11 +101,12 @@ And it is **field-aware**: an exact **domain** match is strong enough to carry a
 
 When two records already match on **name and address** but both carry a **different, present** domain:
 
-- Compare domains **structurally** (registrable name + TLD), never by raw string similarity.
-- **Same registrable name (modulo a typo), different TLD** (`initech.com` / `initech.co`, `acme.com` / `acme.io`) → treated as a *variant* → **does not veto** → the pair merges.
-- **Different registrable name** (beyond a typo) → **veto** → do not merge, even against strong name+address.
-- Direction matters: this is a **veto-release**, not a merge trigger. Domain-similarity can only *block* an otherwise-justified merge; it never creates a merge on its own (a lone fuzzy domain never drags two records together — that would reopen #4).
-- Honest caveat: this is the single place we lean on a fuzzy-domain notion we otherwise distrust. It is only safe because it fires **exclusively inside the name+address-exact branch**; recorded in "where it breaks."
+- Compare domains **structurally** (registrable name + TLD), never by raw string similarity — using the four states in #4.
+- **variant** (same registrable name, different TLD) → **does not veto** → the pair merges.
+- **near** (registrable names 1 edit apart) → **does not veto** — it is too ambiguous to block an otherwise-strong merge; name+address decide.
+- **different** (registrable names >1 edit apart / clearly unrelated) → **veto** → do not merge, even against exact name+address.
+- Direction matters: this is a **veto-release**, not a merge trigger. Domain state can only *block* an otherwise-justified merge; it never creates a merge on its own (a lone fuzzy domain never drags two records together — that would reopen #4).
+- Honest caveat: only a clearly-`different` domain vetoes, so a genuine 1-edit typo (`near`) with exact name+address still merges (correct), while two unrelated companies (`different`) are blocked. Recorded in "where it breaks."
 
 ### 11. Concrete weights, similarity functions, thresholds, and confidence
 
@@ -111,7 +115,7 @@ Starting values, tuned to "a false merge costs more than a false split." All are
 **Field similarity functions (0–1), on normalized strings; 1–3 char tokens dropped; "exact" = `sim == 1.0`:**
 
 - `name_sim`, `address_sim` → **token-set** ratio (proportional), *not* pure shorter-string containment. Legal suffixes are already stripped in normalization (so `Acme` vs `Acme Corporation` → `acme` = 1.0), but a kept **descriptor** token must reduce the score (`Initech` vs `Initech Solutions` → ~0.6, not 1.0) — this is B2 enforced.
-- `domain_sim` → **three states:** exact registrable domain → **1.0** (full weight); same registrable name, different TLD (variant, e.g. `initech.com`/`.co`) → **0.8** (mild positive — a company owning `.com` and `.co` is likely one entity); different registrable name → **excluded from the score** (neutral). We *exclude* the different-name case rather than give it a low score on purpose: a low value in domain's high-weight slot would wrongly *penalize* the pair. A differently-named domain only becomes a hard **veto** inside the name+address-exact branch (#10); it is never scored.
+- `compare_domain` → **four states** (#4): `exact` → scores **1.0** (full weight); `variant` (same registrable name, different TLD) → scores **0.8** (mild positive — a company owning `.com`/`.co` is likely one entity); `near` (registrable names 1 edit apart) and `different` (>1 edit / unrelated) → **excluded from the score** (neutral). We *exclude* rather than give a low score on purpose: a low value in domain's high-weight slot would wrongly *penalize* the pair. Only a `different` domain becomes a hard **veto** inside the name+address-exact branch (#10); `near`/`different` are never scored.
 
 **Weights (over scored fields, re-normalized when some are absent/excluded):** domain **0.50**, name **0.30**, address **0.20**.
 

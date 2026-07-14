@@ -313,7 +313,7 @@ git commit -m "feat: per-field formatting-noise normalization"
 - Produces:
   - `name_sim(a: str, b: str) -> float` (0–1, extra tokens penalize).
   - `address_sim(a: str, b: str) -> float` (0–1, containment).
-  - `compare_domain(a: str, b: str) -> str` — one of `"exact"`, `"variant"`, `"different"`, `"missing"`.
+  - `compare_domain(a: str, b: str) -> str` — one of `"exact"`, `"variant"`, `"near"`, `"different"`, `"missing"` (four-state classification per decision #4).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -333,8 +333,9 @@ def test_address_containment_not_penalized():
 def test_domain_states():
     assert compare_domain("acme.com", "acme.com") == "exact"
     assert compare_domain("initech.com", "initech.co") == "variant"   # same name, diff TLD
-    assert compare_domain("globex.io", "globed.com") == "different"   # diff registrable name
-    assert compare_domain("infitech.com", "inftech.com") == "variant" # typo within name
+    assert compare_domain("globex.io", "globed.com") == "near"        # 1-edit name: ambiguous
+    assert compare_domain("infitech.com", "inftech.com") == "near"    # typo in name: ambiguous
+    assert compare_domain("foo.com", "zzzbar.com") == "different"     # >1 edit: unrelated
     assert compare_domain("", "acme.com") == "missing"
 ```
 
@@ -375,10 +376,10 @@ def compare_domain(a, b):
     name_a, tld_a = _split_domain(a)
     name_b, tld_b = _split_domain(b)
     if name_a == name_b:
-        return "variant"                     # same name, different TLD
+        return "variant"                     # same name, different TLD -> likely one company
     if Levenshtein.distance(name_a, name_b) <= TYPO_MAX_EDITS:
-        return "variant"                     # typo within the registrable name
-    return "different"
+        return "near"                        # 1-edit name: ambiguous (typo OR different co.)
+    return "different"                        # >1 edit: treat as unrelated
 ```
 
 - [ ] **Step 4: Run to verify it passes**
@@ -386,7 +387,7 @@ def compare_domain(a, b):
 Run: `pytest tests/test_similarity.py -v`
 Expected: PASS (4 tests)
 
-> Note (record in review): `name_sim` uses `token_sort_ratio` (extra tokens penalize, per #B2); `address_sim` uses `partial_ratio` (containment, per #5). This split is the refinement raised at plan time. `compare_domain`'s `"variant"` via typo distance is the #10 typo exception; a `"different"` result is what the scorer turns into a veto.
+> Note (record in review): `name_sim` uses `token_sort_ratio` (extra tokens penalize, per #B2); `address_sim` uses `partial_ratio` (containment, per #5). This split is the refinement raised at plan time. `compare_domain` is four-state (#4): `exact`/`variant` score 1.0/0.8; a 1-edit registrable name is `near` (ambiguous — excluded, never vetoes); only `different` (>1 edit) is a veto candidate. `near` is what makes globex/globed and a genuine typo pair both resolve on name+address.
 
 - [ ] **Step 5: Commit**
 
@@ -409,8 +410,8 @@ git commit -m "feat: field similarity — name (token-sort), address (partial), 
 
 **Logic (from #4/#6/#7/#10/#11):**
 1. Determine fields present on **both** records: name, address, domain.
-2. Domain contributes to the score only when `compare_domain` is `"exact"` (1.0) or `"variant"` (0.8); `"different"`/`"missing"` → domain excluded from scored fields.
-3. **Veto:** if name AND address both present with `sim == 1.0` (exact) and `compare_domain == "different"` → `no_merge` (veto), regardless of score.
+2. Domain contributes to the score only when `compare_domain` is `"exact"` (1.0) or `"variant"` (0.8); `"near"`/`"different"`/`"missing"` → domain excluded from scored fields.
+3. **Veto:** if name AND address both present with `sim == 1.0` (exact) and `compare_domain == "different"` → `no_merge` (veto), regardless of score. Note `"near"` does **not** veto (it is ambiguous, per #4).
 4. Weighted score over scored fields, weights re-normalized.
 5. Gate by scored-field count: 1 field → merge only if exact (domain exact → merge; name/address exact → review); else compare to `THRESHOLDS[count]`; within `REVIEW_BAND` below → review; below that → no_merge.
 6. Confidence = `round(score*100)` capped by scored-field count (3→99, 2→95, 1→90).
