@@ -13,7 +13,26 @@ def test_sample_groups():
     r = Reconciler(store)
     canon = r.reconcile_batch(_load())
     groups = sorted(sorted(c.member_ids, key=int) for c in canon)
+    assert len(groups) == 6                        # exactly six groups, no strays/dupes
     assert ["1", "2", "3"] in groups
     assert ["4", "5"] in groups
     assert ["6"] in groups and ["7"] in groups    # Initech pair left separate (review band)
     assert ["8"] in groups and ["9"] in groups
+
+
+def test_new_record_bridges_two_groups():
+    store = Store("file:recon_bridge?mode=memory&cache=shared")
+    store.init_schema()
+    r = Reconciler(store)
+
+    # A: domain-only -> its own group
+    r.add_record(RawRecord(id="A", name=None, address=None, website="zeta.com"))
+    # B: name+address-only -> must NOT merge with A (no comparable field in common)
+    r.add_record(RawRecord(id="B", name="Zeta Industries", address="10 River Road", website=None))
+    assert len(store.all_canonicals()) == 2
+
+    # C: all three fields -> exact domain match to A, exact name+address match to B -> bridges both
+    r.add_record(RawRecord(id="C", name="Zeta Industries", address="10 River Road", website="zeta.com"))
+    canon = store.all_canonicals()
+    assert len(canon) == 1
+    assert set(canon[0].member_ids) == {"A", "B", "C"}

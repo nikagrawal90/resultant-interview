@@ -2,7 +2,7 @@ from app.normalize import normalize_record
 from app.scoring import score_pair
 from app.merge import build_canonical
 from app.grouping import UnionFind
-from app.models import NormalizedRecord, CanonicalRecord
+from app.models import NormalizedRecord
 from app.config import BM25_TOP_K
 
 class Reconciler:
