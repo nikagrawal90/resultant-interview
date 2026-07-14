@@ -52,8 +52,10 @@ single group's canonical.)
   suffixes, token order, domain → registrable domain). Meaningful descriptor
   tokens (`Solutions`, `Systems`, `Group`) are kept as signal, not stripped.
 - **Candidate generation** — SQLite exact-hash lookups on normalized
-  domain/name/address, plus an FTS5 trigram index (`tokenize='trigram'`) for
-  typo-tolerant fuzzy recall, so a mistyped domain still surfaces a match.
+  domain/name/address, plus an FTS5 trigram index (`tokenize='trigram'`)
+  over **name and address** for typo-tolerant fuzzy recall. Domain candidate
+  generation is **exact-match only** — the trigram index does not cover the
+  domain field (fuzzy-domain recall is deferred, decision #4).
 - **Score & decide** — weighted sum over the fields present *on both*
   records (domain 0.50, name 0.30, address 0.20; missing fields drop out of
   both numerator and denominator), then a field-aware tiered threshold and a
@@ -122,11 +124,16 @@ Honest limitations, detailed in [`edge-cases.md`](edge-cases.md) §E:
   matching on 1 of 1 available fields is inherently less certain than
   matching on 3 of 3, and the current confidence score doesn't fully account
   for that.
+- **A record whose only link to its true match is a mistyped *domain*** (no
+  name/address overlap) is never proposed as a candidate — the trigram index
+  covers name/address only, so exact-domain lookup misses the typo and
+  fuzzy-domain candidate generation is deferred (decision #4).
 
 ## Sample run
 
 `data/sample.json` reconciled end-to-end (`app.reconcile.Reconciler.reconcile_batch`),
-printed as `member_ids -> name | address | domain | confidence`:
+printed as `member_ids -> name | address | domain | confidence` (member ids
+shown sorted for readability — the raw output emits them in merge order):
 
 ```
 ['1', '2', '3'] -> Acme Corporation | 123 Main Street | acme.com | conf 90
@@ -141,8 +148,10 @@ Six groups, as expected: the Acme trio merges transitively (rows 1–3),
 Globex's two rows merge, and Initech/Initech Solutions/Innotech/Globed
 Systems all correctly stay apart despite their near-miss names — Initech
 (row 6, `.com`) and Initech Solutions (row 7, `.co`) land just under the
-merge threshold (score ~0.78 vs. an 0.82 bar) and are logged as a review
-case rather than silently merged or dropped.
+merge threshold (score ~0.78 vs. an 0.82 bar), so they are left **unmerged**
+(the conservative default). The `review` distinction is available on the
+returned `PairDecision` (`decision`/`reason`) but is **not yet
+persisted/logged** in the running pipeline — future work.
 
 ## Tests
 
